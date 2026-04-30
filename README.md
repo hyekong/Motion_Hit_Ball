@@ -9,7 +9,7 @@ OpenCV의 프레임 차분법(Frame Differencing)을 활용하여 별도의 센�
 
 ## 시연 영상
 
-> ![Uploading Hitball.gif…]()
+> https://youtu.be/IJ5b2mkcpT8
 
 ---
 
