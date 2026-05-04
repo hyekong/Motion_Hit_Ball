@@ -1,24 +1,28 @@
-# Motion-Hit-Ball 🎯
+# OpenCV 기반 비전 실시간 모션 인터랙션 게임 🎯
 
-웹캠 기반 모션 감지 공 맞추기 게임
+JetRover 로봇 카메라와 OpenCV를 활용한 실시간 모션 감지 게임
 
-카메라 앞에서 손을 움직여 화면 속 공을 터치하면 점수가 올라가는 인터랙티브 게임입니다.  
-OpenCV의 프레임 차분법(Frame Differencing)을 활용하여 별도의 센서 없이 실시간 움직임을 감지합니다.
+---
+
+## 프로젝트 개요
+
+JetRover 로봇에 탑재된 카메라로부터 실시간 영상을 입력받아, OpenCV 기반의 영상처리 파이프라인을 구축하여 모션 인터랙션 게임을 구현하였습니다.
+
+원본 영상을 그레이스케일로 변환하여 연산량을 줄이고, 가우시안 블러를 적용하여 카메라 노이즈를 제거한 뒤, 연속 프레임 간 차분(absdiff)과 이진화(threshold)를 통해 움직임이 발생한 영역을 객체로 추출합니다. 추출된 움직임 객체와 화면 내 공의 ROI 영역을 비교하여 충돌 여부를 실시간으로 판정합니다.
 
 ---
 
 ## 시연 영상
 
-> https://youtu.be/IJ5b2mkcpT8
+> 추후 GIF 또는 영상 링크 추가 예정
 
 ---
 
 ## 주요 기능
 
-- **실시간 모션 감지** — 연속된 프레임 간 픽셀 차이를 비교하여 움직임을 검출
-- **ROI 기반 충돌 판정** — 공 주변 영역(Region of Interest)에서 움직임 비율이 임계값을 초과하면 터치로 인정
-- **파티클 이펙트** — 공 터치 시 충돌 지점에서 파티클이 생성되어 사방으로 퍼지며 소멸
-- **공 색상 랜덤 변화** — 터치할 때마다 공 색상이 랜덤으로 변경
+- **실시간 모션 감지** — 연속 프레임 간 픽셀 차이를 비교하여 움직임 검출
+- **ROI 기반 충돌 판정** — 공 주변 영역에서 움직임 비율이 10% 초과 시 터치 인정
+- **터치 감지 시 효과** — 충돌 지점에서 파티클이 사방으로 퍼지며 소멸, 공 색상 랜덤 변경
 
 ---
 
@@ -27,22 +31,65 @@ OpenCV의 프레임 차분법(Frame Differencing)을 활용하여 별도의 센�
 | 구분 | 내용 |
 |------|------|
 | 언어 | Python 3 |
-| 라이브러리 | OpenCV (`cv2`) |
-| 입력 장치 | 웹캠 (USB 또는 노트북 내장) |
+| 라이브러리 | OpenCV (cv2) |
+| 장비 | JetRover (Jetson Nano B01 / HD Camera / ROS) |
 
 ---
 
-## 동작 원리
+## 알고리즘 (5단계 파이프라인)
+
+### [1단계] OpenCV VideoCapture를 통한 영상 입력
+
+```python
+capture = cv2.VideoCapture(0)
+```
+
+### [2단계] 좌우 반전 → 그레이스케일 변환 → 가우시안 블러(노이즈 제거)
+
+```python
+frame = cv2.flip(frame, 1)
+gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+gray_frame = cv2.GaussianBlur(gray, (21, 21), 0)
+```
+
+### [3단계] 이전 프레임과 차분(absdiff) → 이진화(threshold)
+
+```python
+diff_frame = cv2.absdiff(pre_gray_frame, gray_frame)
+_, thresh_frame = cv2.threshold(diff_frame, 25, 255, cv2.THRESH_BINARY)
+```
+
+### [4단계] ROI 영역 움직임 판정
+
+```python
+cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+roi = thresh_frame[y1:y2, x1:x2]
+movement_pixel = cv2.countNonZero(roi)
+
+area = (x2 - x1) * (y2 - y1)
+if area > 0 and movement_pixel > area * 0.1:
+    score += 1
+```
+
+### [5단계] 파티클 생성 및 색상 변경
+
+```python
+for i in range(10):
+    p = Particle(red_ball.x, red_ball.y, red_ball.color)
+    particles.append(p)
+
+red_ball.color = get_random_color()
+```
+
+---
+
+## 프로젝트 구조
 
 ```
-프레임 캡처 → 좌우 반전 → 그레이스케일 변환 → 가우시안 블러
-→ 이전 프레임과 차분(absdiff) → 이진화(threshold) → ROI 영역 움직임 판정
+Motion_Hit_Ball/
+├── hit_ball_v2.py    # 메인 게임 코드
+└── README.md
 ```
-
-1. **전처리** : 캡처한 프레임을 그레이스케일로 변환하고, 가우시안 블러로 카메라 노이즈를 제거합니다.
-2. **움직임 감지** : 이전 프레임과 현재 프레임의 픽셀 값 차이(`absdiff`)를 구한 뒤, 임계값(25) 이상인 픽셀을 이진화합니다.
-3. **충돌 판정** : 공 위치를 중심으로 ROI를 설정하고, 해당 영역 내 흰색 픽셀(움직임) 비율이 10%를 초과하면 터치로 판정합니다.
-4. **이펙트 처리** : 터치 시 파티클 객체 10개를 생성하고, 매 프레임 위치를 갱신하며 수명이 다하면 제거합니다.
 
 ---
 
@@ -51,7 +98,7 @@ OpenCV의 프레임 차분법(Frame Differencing)을 활용하여 별도의 센�
 ### 요구 사항
 
 - Python 3.7 이상
-- 웹캠
+- JetRover 로봇 (또는 웹캠)
 
 ### 설치
 
@@ -65,56 +112,20 @@ pip install opencv-python
 python hit_ball_v2.py
 ```
 
-- 웹캠이 활성화되면 손을 움직여 빨간 공을 터치하세요.
-- **ESC** 키를 누르면 종료됩니다.
+카메라 앞에서 손을 움직여 공을 터치하세요. **ESC** 키를 누르면 종료됩니다.
 
 ---
 
-## 프로젝트 구조
+## 결과
 
-```
-Motion-Hit-Ball/
-├── hit_ball_v2.py    # 메인 게임 코드
-└── README.md
-```
+JetRover 로봇에 탑재된 카메라와 OpenCV를 활용하여, 별도의 센서 없이 사용자의 움직임을 실시간으로 감지하는 인터랙티브 게임을 구현하였습니다. 일반 웹캠이 아닌 실제 로봇 환경의 영상 입력을 활용하여 로봇과 사용자 간의 상호작용 가능성을 확인하였습니다.
 
 ---
 
-## 클래스 설계
+## 향후 계획
 
-### Ball
-| 속성 | 타입 | 설명 |
-|------|------|------|
-| `x`, `y` | int | 공의 좌표 |
-| `radius` | int | 반지름 |
-| `color` | tuple | BGR 색상값 |
-| `is_active` | bool | 활성화 여부 |
-
-### Particle
-| 속성 | 타입 | 설명 |
-|------|------|------|
-| `x`, `y` | float | 파티클 좌표 |
-| `vx`, `vy` | float | 이동 속도 |
-| `color` | tuple | BGR 색상값 |
-| `life` | int | 남은 수명 (프레임 단위) |
-
----
-
-## 조작법
-
-| 키 | 동작 |
-|----|------|
-| 손 움직임 | 공 터치 |
-| ESC | 게임 종료 |
-
----
-
-## 개선 가능 사항
-
-- 배경 차분법 적용으로 정지 상태에서도 감지 가능하도록 개선
-- 제한 시간 모드 추가
-- 난이도 시스템 (점수에 따라 공 크기 감소)
-- 사운드 효과 추가 (`playsound` 등)
+- JetRover 로봇 팔(6DOF)과 연동하여 공 위치에 따라 로봇 팔이 물리적으로 반응하는 기능 추가
+- 3D 깊이 카메라를 활용한 거리 기반 난이도 조절 시스템 도입
 
 ---
 
